@@ -1,0 +1,353 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// نموذج المستخدمين - يشمل العملاء والكبائن والمدراء
+// ============================================
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?  @unique
+  phone     String   @unique
+  password  String
+  role      String   @default("CUSTOMER") // CUSTOMER, CAPTAIN, ADMIN
+  avatar    String?
+  isActive  Boolean  @default(true)
+  fcmToken  String?  // Firebase Cloud Messaging token للإشعارات
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // العلاقات
+  sentParcels     Parcel[]   @relation("SenderParcels")
+  captainProfile  Captain?   @relation("CaptainProfile")
+  notifications   Notification[]
+  supportTickets  SupportTicket[]
+  reviews         Review[]   @relation("UserReviews")
+  sessions        Session[]
+}
+
+// ============================================
+// نموذج الكابتن (السائق)
+// ============================================
+model Captain {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  vehicleType      String   @default("MOTORCYCLE") // MOTORCYCLE, CAR, VAN, TRUCK
+  vehicleBrand     String?
+  licensePlate     String?
+  isOnline         Boolean  @default(false)
+  isAvailable      Boolean  @default(true)
+  currentLatitude  Float?
+  currentLongitude Float?
+  heading          Float?   // اتجاه الحركة بالدرجات
+  rating           Float    @default(5.0)
+  totalDeliveries  Int      @default(0)
+  totalRatingCount Int      @default(0)
+  idVerified       Boolean  @default(false)
+  approvedAt       DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // العلاقات
+  user      User     @relation("CaptainProfile", fields: [userId], references: [id])
+  parcels   Parcel[]
+  locations LocationUpdate[]
+  reviews   Review[]  @relation("CaptainReviews")
+  wallet    CaptainWallet? @relation("CaptainWallet")
+}
+
+// ============================================
+// نموذج الطرود / الطلبات
+// ============================================
+model Parcel {
+  id             String   @id @default(cuid())
+  trackingNumber String   @unique // رقم التتبع الفريد
+  
+  // معلومات المرسل
+  senderId       String
+  senderAddress  String
+  senderLat      Float
+  senderLng      Float
+  senderNotes    String?
+  
+  // معلومات المستلم
+  receiverName   String
+  receiverPhone  String
+  receiverAddress String
+  receiverLat    Float
+  receiverLng    Float
+  receiverNotes  String?
+  
+  // معلومات الكابتن
+  captainId      String?
+  assignedAt     DateTime?
+  
+  // تفاصيل الطرد
+  status         String   @default("PENDING") // PENDING, PICKED_UP, IN_TRANSIT, DELIVERED, CANCELLED, RETURNED
+  weight         Float?   // الوزن بالكيلوجرام
+  size           String?  // SMALL, MEDIUM, LARGE
+  description    String?
+  category       String?  // DOCUMENTS, FOOD, ELECTRONICS, CLOTHES, OTHER
+  imageUrl       String?
+  
+  // التكلفة والدفع
+  deliveryFee    Float    @default(0.0)
+  codAmount      Float?   // الدفع عند الاستلام
+  paymentMethod  String   @default("CASH") // CASH, CARD, WALLET
+  paymentStatus  String   @default("PENDING") // PENDING, PAID, REFUNDED
+  
+  // التوقيت
+  pickedUpAt     DateTime?
+  deliveredAt    DateTime?
+  cancelledAt    DateTime?
+  cancelReason   String?
+  estimatedDelivery DateTime? // الوقت المتوقع للتوصيل
+  
+  // الملاحظات الداخلية
+  adminNotes     String?
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  // العلاقات
+  sender         User             @relation("SenderParcels", fields: [senderId], references: [id])
+  captain        Captain?         @relation(fields: [captainId], references: [id])
+  payments       Payment[]
+  timeline       ParcelTimeline[]
+  locations      LocationUpdate[]
+  supportTickets SupportTicket[]
+  reviews        Review[]
+}
+
+// ============================================
+// نموذج تحديثات موقع الكابتن (التتبع)
+// ============================================
+model LocationUpdate {
+  id        String   @id @default(cuid())
+  captainId String
+  parcelId  String?
+  latitude  Float
+  longitude Float
+  heading   Float?
+  speed     Float?   // السرعة بالكم/ساعة
+  accuracy  Float?   // دقة GPS بالمتر
+  timestamp DateTime @default(now())
+  
+  // العلاقات
+  captain   Captain  @relation(fields: [captainId], references: [id])
+  parcel    Parcel?  @relation(fields: [parcelId], references: [id])
+  
+  @@index([captainId])
+  @@index([parcelId])
+}
+
+// ============================================
+// نموذج المدفوعات
+// ============================================
+model Payment {
+  id             String   @id @default(cuid())
+  parcelId       String
+  amount         Float
+  method         String   // CASH, CARD, WALLET
+  status         String   @default("PENDING") // PENDING, COMPLETED, FAILED, REFUNDED
+  transactionRef String?  // مرجع المعاملة
+  captainEarning Float?   // حصة الكابتن
+  platformFee    Float?   // رسوم المنصة
+  paidAt         DateTime?
+  createdAt      DateTime @default(now())
+  
+  // العلاقات
+  parcel         Parcel   @relation(fields: [parcelId], references: [id])
+  
+  @@index([parcelId])
+}
+
+// ============================================
+// نموذج سجل أحداث الطرد (Timeline)
+// ============================================
+model ParcelTimeline {
+  id          String   @id @default(cuid())
+  parcelId    String
+  status      String
+  description String
+  location    String?  // وصف الموقع
+  latitude    Float?
+  longitude   Float?
+  createdBy   String?  // userId أو "SYSTEM"
+  createdAt   DateTime @default(now())
+  
+  // العلاقات
+  parcel      Parcel   @relation(fields: [parcelId], references: [id])
+  
+  @@index([parcelId])
+}
+
+// ============================================
+// نموذج الإشعارات
+// ============================================
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  type      String   @default("INFO") // INFO, ORDER_UPDATE, PAYMENT, PROMOTION
+  data      String?  // JSON string for extra data
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  
+  // العلاقات
+  user      User     @relation(fields: [userId], references: [id])
+  
+  @@index([userId])
+}
+
+// ============================================
+// نموذج إعدادات المنصة
+// ============================================
+model PlatformSettings {
+  id                     String @id @default(cuid())
+  key                    String @unique
+  value                  String
+  description            String?
+  updatedAt              DateTime @updatedAt
+}
+
+// ============================================
+// نموذج تذاكر الدعم
+// ============================================
+model SupportTicket {
+  id          String   @id @default(cuid())
+  userId      String
+  parcelId    String?
+  subject     String
+  description String
+  status      String   @default("OPEN") // OPEN, IN_PROGRESS, RESOLVED, CLOSED
+  priority    String   @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  assignedTo  String?  // userId of admin assigned
+  response    String?  // admin response text
+  respondedAt DateTime?
+  resolvedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id])
+  parcel      Parcel?  @relation(fields: [parcelId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+}
+
+// ============================================
+// نموذج مناطق التغطية
+// ============================================
+model CoverageArea {
+  id          String   @id @default(cuid())
+  name        String   // اسم المنطقة
+  isActive    Boolean  @default(true)
+  deliveryFee Float    @default(0.0)
+  estimatedMinutes Int @default(30) // الوقت المتوقع بالدقائق
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============================================
+// نموذج كوبونات الخصم
+// ============================================
+model PromoCode {
+  id            String   @id @default(cuid())
+  code          String   @unique           // كود الكوبون (مثال: WELCOME20)
+  description   String?                    // وصف الكوبون
+  discountType  String   @default("PERCENTAGE") // PERCENTAGE, FIXED
+  discountValue Float                      // قيمة الخصم (نسبة أو مبلغ ثابت)
+  minOrderAmount Float  @default(0.0)     // الحد الأدنى للطلب
+  maxDiscount   Float?                     // الحد الأقصى للخصم
+  maxUses       Int?                       // الحد الأقصى للاستخدامات
+  usedCount     Int      @default(0)       // عدد الاستخدامات الحالية
+  startsAt      DateTime @default(now())   // تاريخ البداية
+  expiresAt     DateTime?                  // تاريخ الانتهاء
+  isActive      Boolean  @default(true)
+  createdBy     String?                    // userId المدير الذي أنشأه
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ============================================
+// نموذج التقييمات والمراجعات
+// ============================================
+model Review {
+  id          String   @id @default(cuid())
+  parcelId    String
+  reviewerId  String                    // userId المستخدم الذي كتب التقييم
+  captainId   String                    // captainId الكابتن المُقيَّم
+  rating      Int                        // 1-5 نجوم
+  comment     String?                    // تعليق نصي
+  reply       String?                    // رد الكابتن
+  repliedAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  parcel      Parcel   @relation(fields: [parcelId], references: [id])
+  reviewer    User     @relation("UserReviews", fields: [reviewerId], references: [id])
+  captain     Captain  @relation("CaptainReviews", fields: [captainId], references: [id])
+
+  @@index([parcelId])
+  @@index([captainId])
+  @@index([reviewerId])
+}
+
+// ============================================
+// نموذج محفظة الكابتن
+// ============================================
+model CaptainWallet {
+  id             String   @id @default(cuid())
+  captainId      String   @unique
+  balance        Float    @default(0.0)       // الرصيد الحالي
+  totalEarnings  Float    @default(0.0)       // إجمالي الأرباح
+  totalWithdrawn Float    @default(0.0)       // إجمالي المسحوبات
+  pendingAmount Float    @default(0.0)       // المبالغ المعلقة
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  captain        Captain  @relation("CaptainWallet", fields: [captainId], references: [id])
+  transactions   WalletTransaction[]
+}
+
+// ============================================
+// نموذج الجلسات - بديل للتخزين في الذاكرة
+// ============================================
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+}
+
+// ============================================
+// نموذج معاملات المحفظة
+// ============================================
+model WalletTransaction {
+  id             String   @id @default(cuid())
+  walletId       String
+  type           String   // EARNING, WITHDRAWAL, ADJUSTMENT, BONUS
+  amount         Float
+  description    String?
+  referenceId    String?  // parcelId أو معرف خارجي
+  status         String   @default("COMPLETED") // PENDING, COMPLETED, FAILED
+  createdAt      DateTime @default(now())
+
+  wallet         CaptainWallet @relation(fields: [walletId], references: [id])
+
+  @@index([walletId])
+}

@@ -1,0 +1,204 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:../../db/custom.db"
+}
+
+// ============================================
+// نموذج المستخدمين - يشمل العملاء والكبائن والمدراء
+// ============================================
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?  @unique
+  phone     String   @unique
+  password  String
+  role      String   @default("CUSTOMER")
+  avatar    String?
+  isActive  Boolean  @default(true)
+  fcmToken  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sentParcels     Parcel[]   @relation("SenderParcels")
+  captainProfile  Captain?   @relation("CaptainProfile")
+  notifications   Notification[]
+}
+
+// ============================================
+// نموذج الكابتن (السائق)
+// ============================================
+model Captain {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  vehicleType      String   @default("MOTORCYCLE")
+  vehicleBrand     String?
+  licensePlate     String?
+  isOnline         Boolean  @default(false)
+  isAvailable      Boolean  @default(true)
+  currentLatitude  Float?
+  currentLongitude Float?
+  heading          Float?
+  rating           Float    @default(5.0)
+  totalDeliveries  Int      @default(0)
+  totalRatingCount Int      @default(0)
+  idVerified       Boolean  @default(false)
+  approvedAt       DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user      User     @relation("CaptainProfile", fields: [userId], references: [id])
+  parcels   Parcel[]
+  locations LocationUpdate[]
+}
+
+// ============================================
+// نموذج الطرود / الطلبات
+// ============================================
+model Parcel {
+  id             String   @id @default(cuid())
+  trackingNumber String   @unique
+  senderId       String
+  senderAddress  String
+  senderLat      Float
+  senderLng      Float
+  senderNotes    String?
+  receiverName   String
+  receiverPhone  String
+  receiverAddress String
+  receiverLat    Float
+  receiverLng    Float
+  receiverNotes  String?
+  captainId      String?
+  assignedAt     DateTime?
+  status         String   @default("PENDING")
+  weight         Float?
+  size           String?
+  description    String?
+  category       String?
+  imageUrl       String?
+  deliveryFee    Float    @default(0.0)
+  codAmount      Float?
+  paymentMethod  String   @default("CASH")
+  paymentStatus  String   @default("PENDING")
+  pickedUpAt     DateTime?
+  deliveredAt    DateTime?
+  cancelledAt    DateTime?
+  cancelReason   String?
+  estimatedDelivery DateTime?
+  adminNotes     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  sender         User             @relation("SenderParcels", fields: [senderId], references: [id])
+  captain        Captain?         @relation(fields: [captainId], references: [id])
+  payments       Payment[]
+  timeline       ParcelTimeline[]
+  locations      LocationUpdate[]
+}
+
+// ============================================
+// نموذج تحديثات موقع الكابتن (التتبع)
+// ============================================
+model LocationUpdate {
+  id        String   @id @default(cuid())
+  captainId String
+  parcelId  String?
+  latitude  Float
+  longitude Float
+  heading   Float?
+  speed     Float?
+  accuracy  Float?
+  timestamp DateTime @default(now())
+
+  captain   Captain  @relation(fields: [captainId], references: [id])
+  parcel    Parcel?  @relation(fields: [parcelId], references: [id])
+
+  @@index([captainId])
+  @@index([parcelId])
+}
+
+// ============================================
+// نموذج المدفوعات
+// ============================================
+model Payment {
+  id             String   @id @default(cuid())
+  parcelId       String
+  amount         Float
+  method         String
+  status         String   @default("PENDING")
+  transactionRef String?
+  captainEarning Float?
+  platformFee    Float?
+  paidAt         DateTime?
+  createdAt      DateTime @default(now())
+
+  parcel         Parcel   @relation(fields: [parcelId], references: [id])
+
+  @@index([parcelId])
+}
+
+// ============================================
+// نموذج سجل أحداث الطرد (Timeline)
+// ============================================
+model ParcelTimeline {
+  id          String   @id @default(cuid())
+  parcelId    String
+  status      String
+  description String
+  location    String?
+  latitude    Float?
+  longitude   Float?
+  createdBy   String?
+  createdAt   DateTime @default(now())
+
+  parcel      Parcel   @relation(fields: [parcelId], references: [id])
+
+  @@index([parcelId])
+}
+
+// ============================================
+// نموذج الإشعارات
+// ============================================
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  type      String   @default("INFO")
+  data      String?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+// ============================================
+// نموذج إعدادات المنصة
+// ============================================
+model PlatformSettings {
+  id                     String @id @default(cuid())
+  key                    String @unique
+  value                  String
+  description            String?
+  updatedAt              DateTime @updatedAt
+}
+
+// ============================================
+// نموذج مناطق التغطية
+// ============================================
+model CoverageArea {
+  id          String   @id @default(cuid())
+  name        String
+  isActive    Boolean  @default(true)
+  deliveryFee Float    @default(0.0)
+  estimatedMinutes Int @default(30)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
